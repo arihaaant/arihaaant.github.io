@@ -1,0 +1,126 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { getEntries, STATUS_LABEL, KIND_LABEL, fmtMonth, type Entry } from '../../lib/entries';
+
+export async function getStaticPaths() {
+  const entries = await getEntries();
+  return entries.map((entry, i) => ({
+    params: { id: entry.id },
+    props: { entry, newer: entries[i - 1], older: entries[i + 1] },
+  }));
+}
+
+interface Props {
+  entry: Entry;
+  newer?: Entry;
+  older?: Entry;
+}
+const { entry, newer, older } = Astro.props;
+const { data } = entry;
+const { Content } = await render(entry);
+const date = fmtMonth(data.date);
+---
+
+<Base title={`${data.title} · Arihant Jha`} description={data.summary}>
+  <a href="/#log" class="back mono">← back to the log</a>
+
+  <article class="sheet">
+    <aside class="margin mono" aria-label="Entry details">
+      <p class="no">No.{entry.no}</p>
+      <dl>
+        <dt>Status</dt>
+        <dd class={`status-${data.status}`}><span class={`glyph ${data.status}`}></span> {STATUS_LABEL[data.status]}</dd>
+        <dt>Logged</dt><dd>{date}</dd>
+        {data.period && (<><dt>Period</dt><dd>{data.period}</dd></>)}
+        <dt>Type</dt><dd>{KIND_LABEL[data.kind]}</dd>
+        {data.org && (<><dt>Org</dt><dd>{data.org}</dd></>)}
+        <dt>Tags</dt><dd>{data.tags.map((t) => `#${t}`).join(' ')}</dd>
+        {data.stack.length > 0 && (<><dt>Stack</dt><dd>{data.stack.join(', ')}</dd></>)}
+        {data.repo && (<><dt>Source</dt><dd><a href={data.repo}>GitHub ↗</a></dd></>)}
+      </dl>
+    </aside>
+
+    <div class="body">
+      <h1>{data.title}</h1>
+      <p class="summary">{data.summary}</p>
+
+      {data.metrics.length > 0 && (
+        <table class="readings">
+          <caption class="mono">Readings</caption>
+          <tbody>
+            {data.metrics.map((m) => (
+              <tr><th scope="row">{m.value}</th><td>{m.label}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {data.kind === 'case-study' && (
+        <p class="note mono">Industry work. This entry covers the architecture and outcomes; the implementation stays with the employer.</p>
+      )}
+
+      <div class="prose"><Content /></div>
+    </div>
+  </article>
+
+  <nav class="pager mono" aria-label="More entries">
+    {older ? <a href={`/work/${older.id}/`}>← No.{older.no} {older.data.title}</a> : <span></span>}
+    {newer && <a href={`/work/${newer.id}/`} class="next">No.{newer.no} {newer.data.title} →</a>}
+  </nav>
+</Base>
+
+<style>
+  .back { display: inline-block; margin: 32px 0 24px; color: var(--ink-faint); text-decoration: none; }
+  .back:hover { color: var(--accent); }
+
+  .sheet { display: grid; grid-template-columns: 190px 1fr; gap: 40px; }
+  .margin { position: sticky; top: 84px; align-self: start; font-size: 12px; color: var(--ink-soft); border-right: 1px dashed var(--rule); padding-right: 20px; }
+  .no { font-family: var(--display); font-size: 40px; color: var(--ink-faint); margin: 0 0 12px; line-height: 1; letter-spacing: 0; }
+  dl { margin: 0; }
+  dt { color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10px; margin-top: 12px; }
+  dd { margin: 2px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  dd .glyph { width: 10px; height: 10px; }
+
+  h1 {
+    font-family: var(--display); font-weight: 600; font-size: clamp(30px, 4.8vw, 44px);
+    line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 16px; font-variation-settings: 'opsz' 144;
+  }
+  .summary { font-size: 20px; color: var(--ink-soft); margin: 0 0 28px; }
+
+  .readings { border-collapse: collapse; margin: 0 0 28px; width: 100%; }
+  .readings caption { text-align: left; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; padding-bottom: 6px; }
+  .readings tr { border-top: 1px solid var(--rule); }
+  .readings tr:last-child { border-bottom: 1px solid var(--rule); }
+  .readings th {
+    text-align: left; font-family: var(--mono); font-weight: 500; font-size: 20px; padding: 10px 20px 10px 0;
+    white-space: nowrap; font-variant-numeric: tabular-nums; width: 1%;
+  }
+  .readings td { color: var(--ink-soft); padding: 10px 0; }
+
+  .note { font-size: 12px; color: var(--ink-faint); border-left: 3px solid var(--highlight); padding: 4px 0 4px 12px; margin: 0 0 12px; }
+
+  .prose :global(h2) { font-family: var(--display); font-weight: 600; font-size: 26px; margin: 44px 0 12px; }
+  .prose :global(h2)::before { content: '§ '; color: var(--accent); font-weight: 400; }
+  .prose :global(li) { margin-bottom: 8px; }
+  .prose :global(table) { border-collapse: collapse; width: 100%; margin: 16px 0 24px; font-size: 16px; }
+  .prose :global(th) { text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); padding: 0 12px 8px 0; border-bottom: 1px solid var(--rule); }
+  .prose :global(td) { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+  .prose :global(td:last-child), .prose :global(th:last-child) { text-align: right; padding-right: 0; }
+  .prose :global(strong) { font-weight: 600; }
+  .prose :global(code) { font-family: var(--mono); font-size: 0.85em; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
+  .prose :global(pre) { overflow-x: auto; padding: 14px; border-radius: 8px; font-size: 14px; }
+
+  .pager { display: flex; justify-content: space-between; gap: 20px; margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 13px; }
+  .pager a { color: var(--ink-soft); text-decoration: none; max-width: 48%; }
+  .pager a:hover { color: var(--accent); }
+  .pager .next { text-align: right; margin-left: auto; }
+
+  @media (max-width: 720px) {
+    .sheet { grid-template-columns: 1fr; gap: 24px; }
+    .margin { position: static; border-right: 0; border-bottom: 1px dashed var(--rule); padding: 0 0 16px; }
+    .margin dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; }
+    .margin dt { margin-top: 0; align-self: center; }
+    .no { font-size: 28px; }
+  }
+</style>

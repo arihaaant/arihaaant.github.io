@@ -1,0 +1,221 @@
+---
+import Base from '../layouts/Base.astro';
+import { getEntries, STATUS_LABEL, KIND_LABEL, fmtMonth } from '../lib/entries';
+
+const entries = await getEntries();
+const running = entries.filter((e) => e.data.status === 'running');
+const lastUpdated = entries[0]?.data.date;
+
+const years = [...new Set(entries.map((e) => e.data.date.getUTCFullYear()))];
+const byYear = years.map((y) => ({ year: y, items: entries.filter((e) => e.data.date.getUTCFullYear() === y) }));
+
+const TAGS = ['evals', 'data', 'agents', 'ml', 'infra'].filter((t) =>
+  entries.some((e) => e.data.tags.includes(t as never)),
+);
+const counts = Object.fromEntries(TAGS.map((t) => [t, entries.filter((e) => e.data.tags.includes(t as never)).length]));
+---
+
+<Base>
+  <section class="intro">
+    <p class="mono kicker">
+      {entries.length} entries{lastUpdated && ` · last entry ${fmtMonth(lastUpdated)}`}
+    </p>
+    <h1>
+      I build the <em>data pipelines</em>, <em>evals</em> and <em>guardrails</em> that make LLM systems trustworthy.
+    </h1>
+    <p class="lede">
+      Data engineer, three years at Bajaj Finserv shipping RAG and ML risk systems in regulated fintech, then
+      Siemens. Now an M.S. Data Science student at UW–Madison. This is my working log: what I built, what the
+      numbers were, and what broke.
+    </p>
+    {running.length > 0 && (
+      <p class="now mono">
+        <span class="glyph running" aria-hidden="true"></span>
+        <span>On the bench now:</span>
+        {running.map((e, i) => (
+          <>{i > 0 && ', '}<a href={`/work/${e.id}/`}>{e.data.title}</a></>
+        ))}
+      </p>
+    )}
+  </section>
+
+  <section id="log" aria-label="Project log">
+    <div class="filters" role="search">
+      <div class="chips" role="group" aria-label="Filter by topic">
+        <button type="button" class="chip" data-tag="all" aria-pressed="true">all <span>{entries.length}</span></button>
+        {TAGS.map((t) => (
+          <button type="button" class="chip" data-tag={t} aria-pressed="false">{t} <span>{counts[t]}</span></button>
+        ))}
+      </div>
+      <label class="search">
+        <span class="visually-hidden">Search entries</span>
+        <input id="q" type="search" placeholder="search  /" autocomplete="off" />
+      </label>
+    </div>
+
+    <p class="legend mono" aria-hidden="true">
+      <span><i class="glyph shipped"></i> shipped</span>
+      <span><i class="glyph running"></i> running</span>
+      <span><i class="glyph planned"></i> planned</span>
+    </p>
+
+    {byYear.map(({ year, items }) => (
+      <div class="year" data-year={year}>
+        <h2 class="year-label">{year}</h2>
+        <ol class="entries">
+          {items.map((e) => (
+            <li
+              class="entry"
+              data-tags={e.data.tags.join(' ')}
+              data-text={[e.data.title, e.data.summary, e.data.org, ...e.data.stack].join(' ').toLowerCase()}
+            >
+              <span class={`glyph ${e.data.status}`} title={STATUS_LABEL[e.data.status]}></span>
+              <a class="entry-link" href={`/work/${e.id}/`}>
+                <p class="meta mono">
+                  <span>No.{e.no}</span>
+                  <span>{fmtMonth(e.data.date)}</span>
+                  <span class={`status-${e.data.status}`}>{STATUS_LABEL[e.data.status]}</span>
+                  <span>{KIND_LABEL[e.data.kind]}{e.data.org && ` · ${e.data.org}`}</span>
+                </p>
+                <h3>{e.data.title}</h3>
+                <p class="summary">{e.data.summary}</p>
+                {e.data.metrics.length > 0 && (
+                  <p class="readings mono">
+                    {e.data.metrics.slice(0, 3).map((m) => (
+                      <span><b>{m.value}</b> {m.label}</span>
+                    ))}
+                  </p>
+                )}
+                <p class="tags mono">{e.data.tags.map((t) => <span>#{t}</span>)}</p>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </div>
+    ))}
+    <p class="empty mono" hidden>No entries match. <button type="button" id="reset">Clear filters</button></p>
+  </section>
+</Base>
+
+<script>
+  const chips = [...document.querySelectorAll<HTMLButtonElement>('.chip')];
+  const q = document.querySelector<HTMLInputElement>('#q')!;
+  const entries = [...document.querySelectorAll<HTMLElement>('.entry')];
+  const years = [...document.querySelectorAll<HTMLElement>('.year')];
+  const empty = document.querySelector<HTMLElement>('.empty')!;
+  let tag = 'all';
+
+  function apply() {
+    const terms = q.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    for (const el of entries) {
+      const ok =
+        (tag === 'all' || el.dataset.tags!.split(' ').includes(tag)) &&
+        terms.every((t) => el.dataset.text!.includes(t));
+      el.hidden = !ok;
+      if (ok) shown++;
+    }
+    for (const y of years) y.hidden = !y.querySelector('.entry:not([hidden])');
+    empty.hidden = shown > 0;
+  }
+
+  for (const c of chips) {
+    c.addEventListener('click', () => {
+      tag = c.dataset.tag!;
+      chips.forEach((b) => b.setAttribute('aria-pressed', String(b === c)));
+      apply();
+    });
+  }
+  q.addEventListener('input', apply);
+  document.querySelector('#reset')!.addEventListener('click', () => {
+    q.value = '';
+    chips[0].click();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== q) {
+      e.preventDefault();
+      q.focus();
+    } else if (e.key === 'Escape' && document.activeElement === q) {
+      q.value = '';
+      apply();
+      q.blur();
+    }
+  });
+</script>
+
+<style>
+  .intro { padding: 72px 0 56px; }
+  .kicker { color: var(--ink-faint); margin: 0 0 18px; }
+  h1 {
+    font-family: var(--display); font-weight: 600; font-size: clamp(32px, 5.5vw, 52px);
+    line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 24px; max-width: 18ch;
+    font-variation-settings: 'opsz' 144;
+  }
+  h1 em { font-style: italic; color: var(--accent); padding-right: 0.08em; }
+  .lede { color: var(--ink-soft); max-width: 60ch; margin: 0; }
+  .now {
+    display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 28px;
+    padding: 8px 14px; border: 1px dashed var(--running); border-radius: 999px; color: var(--ink-soft);
+  }
+
+  .filters {
+    position: sticky; top: 60px; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px;
+    justify-content: space-between; align-items: center;
+    padding: 12px 0; margin-bottom: 8px; border-bottom: 1px solid var(--rule);
+    background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(6px);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip, #reset {
+    font-family: var(--mono); font-size: 13px; cursor: pointer; color: var(--ink-soft);
+    background: transparent; border: 1px solid var(--rule); border-radius: 999px; padding: 4px 12px;
+  }
+  .chip span { color: var(--ink-faint); margin-left: 2px; }
+  .chip:hover { border-color: var(--ink-soft); }
+  .chip[aria-pressed='true'] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .chip[aria-pressed='true'] span { color: inherit; opacity: 0.7; }
+  .search input {
+    font-family: var(--mono); font-size: 13px; color: var(--ink); width: 180px;
+    background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px;
+  }
+  .search input:focus { outline: none; border-color: var(--accent); }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  .legend { display: flex; gap: 16px; color: var(--ink-faint); margin: 8px 0 24px; font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .glyph { width: 10px; height: 10px; }
+
+  /* timeline: [year gutter] [rail + entries] */
+  .year { display: grid; grid-template-columns: 88px 1fr; }
+  .year-label {
+    font-family: var(--display); font-weight: 400; font-size: 30px; color: var(--ink-faint);
+    margin: 0; padding-top: 14px; position: sticky; top: 124px; align-self: start;
+    font-variant-numeric: oldstyle-nums;
+  }
+  .entries { list-style: none; margin: 0; padding: 0 0 24px; border-left: 1px solid var(--rule); }
+  .entry { position: relative; padding-left: 28px; }
+  .entry > .glyph { position: absolute; left: -7px; top: 26px; box-shadow: 0 0 0 4px var(--paper); }
+  .entry-link {
+    display: block; text-decoration: none; padding: 16px 18px; margin: 4px 0; border-radius: 8px;
+    border: 1px solid transparent; transition: background 0.15s, border-color 0.15s;
+  }
+  .entry-link:hover { background: var(--paper-raised); border-color: var(--rule); color: inherit; }
+  .entry-link:hover h3 { color: var(--accent); }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; color: var(--ink-faint); font-size: 12px; }
+  h3 { font-family: var(--display); font-weight: 600; font-size: 23px; line-height: 1.25; margin: 0 0 6px; transition: color 0.15s; }
+  .summary { margin: 0; color: var(--ink-soft); }
+  .readings { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; color: var(--ink-soft); font-size: 12px; }
+  .readings b { color: var(--ink); font-weight: 500; font-size: 14px; background: var(--highlight); padding: 0 4px; border-radius: 2px; }
+  .tags { display: flex; gap: 10px; margin: 10px 0 0; color: var(--ink-faint); font-size: 12px; }
+  .empty { color: var(--ink-faint); padding: 32px 0; }
+
+  @media (max-width: 640px) {
+    .intro { padding: 44px 0 36px; }
+    .filters { position: static; }
+    .year { grid-template-columns: 1fr; }
+    .year-label { position: static; font-size: 24px; padding: 8px 0 4px; }
+    .entry { padding-left: 18px; }
+    .entry-link { padding: 12px 8px 12px 10px; }
+    h3 { font-size: 20px; }
+    .search, .search input { width: 100%; }
+  }
+</style>
