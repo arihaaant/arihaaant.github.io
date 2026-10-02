@@ -14,6 +14,7 @@ const work = defineCollection({
     period: z.string().optional(), // human-readable span, e.g. "2022 – 2025"
     org: z.string().optional(),
     tags: z.array(z.enum(['evals', 'data', 'agents', 'ml', 'infra'])).min(1),
+    pitch: z.string().optional(), // the problem and the fix in plain words, shown before the technical summary
     summary: z.string(),
     metrics: z.array(z.object({ value: z.string(), label: z.string() })).default([]),
     stack: z.array(z.string()).default([]),

@@ -67,7 +67,7 @@ const counts = Object.fromEntries(TAGS.map((t) => [t, entries.filter((e) => e.da
             <li
               class="entry"
               data-tags={e.data.tags.join(' ')}
-              data-text={[e.data.title, e.data.summary, e.data.org, ...e.data.stack].join(' ').toLowerCase()}
+              data-text={[e.data.title, e.data.pitch, e.data.summary, e.data.org, ...e.data.stack].join(' ').toLowerCase()}
             >
               <span class={`glyph ${e.data.status}`} title={STATUS_LABEL[e.data.status]}></span>
               <a class="entry-link" href={`/work/${e.id}/`}>
@@ -78,7 +78,8 @@ const counts = Object.fromEntries(TAGS.map((t) => [t, entries.filter((e) => e.da
                   <span>{KIND_LABEL[e.data.kind]}{e.data.org && ` · ${e.data.org}`}</span>
                 </p>
                 <h3>{e.data.title}</h3>
-                <p class="summary">{e.data.summary}</p>
+                {e.data.pitch && <p class="pitch">{e.data.pitch}</p>}
+                <p class:list={['summary', { tech: e.data.pitch }]}>{e.data.summary}</p>
                 {e.data.metrics.length > 0 && (
                   <p class="readings mono">
                     {e.data.metrics.slice(0, 3).map((m) => (
@@ -203,6 +204,8 @@ const counts = Object.fromEntries(TAGS.map((t) => [t, entries.filter((e) => e.da
   .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 6px; color: var(--ink-faint); font-size: 12px; }
   h3 { font-family: var(--display); font-weight: 600; font-size: 23px; line-height: 1.25; margin: 0 0 6px; transition: color 0.15s; }
   .summary { margin: 0; color: var(--ink-soft); }
+  .pitch { margin: 0 0 8px; color: var(--ink); }
+  .summary.tech { font-size: 15px; }
   .readings { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; color: var(--ink-soft); font-size: 12px; }
   .readings b { color: var(--ink); font-weight: 500; font-size: 14px; background: var(--highlight); padding: 0 4px; border-radius: 2px; }
   .tags { display: flex; gap: 10px; margin: 10px 0 0; color: var(--ink-faint); font-size: 12px; }

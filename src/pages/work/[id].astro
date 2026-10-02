@@ -22,7 +22,7 @@ const { Content } = await render(entry);
 const date = fmtMonth(data.date);
 ---
 
-<Base title={`${data.title} · Arihant Jha`} description={data.summary}>
+<Base title={`${data.title} · Arihant Jha`} description={data.pitch ?? data.summary}>
   <a href="/#log" class="back mono">← back to the log</a>
 
   <article class="sheet">
@@ -43,7 +43,8 @@ const date = fmtMonth(data.date);
 
     <div class="body">
       <h1>{data.title}</h1>
-      <p class="summary">{data.summary}</p>
+      {data.pitch && <p class="pitch">{data.pitch}</p>}
+      <p class:list={['summary', { tech: data.pitch }]}>{data.summary}</p>
 
       {data.metrics.length > 0 && (
         <table class="readings">
@@ -87,6 +88,8 @@ const date = fmtMonth(data.date);
     line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 16px; font-variation-settings: 'opsz' 144;
   }
   .summary { font-size: 20px; color: var(--ink-soft); margin: 0 0 28px; }
+  .pitch { font-size: 21px; color: var(--ink); margin: 0 0 14px; }
+  .summary.tech { font-size: 17px; }
 
   .readings { border-collapse: collapse; margin: 0 0 28px; width: 100%; }
   .readings caption { text-align: left; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; padding-bottom: 6px; }
