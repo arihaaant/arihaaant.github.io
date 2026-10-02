@@ -4,6 +4,7 @@ kind: project
 status: shipped
 date: 2026-09-30
 tags: [ml]
+pitch: Chip factories scan every silicon wafer, and the pattern of faulty chips on it points to what went wrong on the production line. I built a model that sorts those patterns into 8 types automatically, shows which part of the wafer drove each decision, and raises an alarm when the mix of defects suddenly shifts.
 summary: Classifies WM-811K wafer maps into 8 defect patterns. An ablation showed that my own stacked imbalance fixes were costing 16 points of macro-F1.
 metrics:
   - { value: '0.917', label: 'test macro-F1 (8 classes, 25.5k wafers)' }
