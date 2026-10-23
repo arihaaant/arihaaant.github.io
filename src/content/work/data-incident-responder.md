@@ -39,6 +39,8 @@ The single agent gets most incidents right too. The difference is what happens w
 
 One of the larger gains during development came from a tool rather than a prompt. Both systems kept mishandling type changes, casting prices that had lost their cents or giving up on dates in a different format. A column profiler that checks every value took the responder from 71% to 93% on those incidents.
 
+Every step of the final run, 378 traces with each query, result and decision, is in the [agent trace explorer](/work/data-incident-responder/traces/).
+
 ## Errata
 
 - The 50 development incidents were tuned on over four runs. The 13 held-out ones were resolved in every run, but that's still only 13 incidents.
