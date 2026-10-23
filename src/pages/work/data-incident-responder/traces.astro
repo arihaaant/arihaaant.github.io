@@ -1,0 +1,308 @@
+---
+import Base from '../../../layouts/Base.astro';
+---
+
+<Base
+  title="Agent traces · data incident responder · Arihant Jha"
+  description="Every step the agents took in the final evaluation of the data incident responder: 63 incidents, three runs each."
+>
+  <div class="tp">
+  <a href="/work/data-incident-responder/" class="back mono">← back to the entry</a>
+
+  <h1>Agent traces</h1>
+  <p class="lede">
+    Every step the agents took in the final evaluation: 63 incidents, three runs of the multi-agent responder and
+    three of the single agent. Each square is one run of one incident. Pick one to see what the agents queried,
+    what came back, what they decided and how long it took.
+  </p>
+  <p class="mono fine">
+    Recorded with Langfuse and compacted to the timeline. Raw records and the scoring are in the{" "}
+    <a href="https://github.com/arihaaant/data-incident-responder/tree/main/results/final">repo</a>.
+  </p>
+
+  <section aria-labelledby="grid-title">
+    <div class="grid-head">
+      <h2 id="grid-title" class="mono label">All runs</h2>
+      <ul class="legend mono">
+        <li><span class="cell ok" aria-hidden="true"></span> resolved, root found</li>
+        <li><span class="cell part" aria-hidden="true"></span> resolved, root missed</li>
+        <li><span class="cell bad" aria-hidden="true"></span> not resolved</li>
+        <li><span class="held" aria-hidden="true"></span> held out</li>
+      </ul>
+    </div>
+    <div class="matrix-wrap"><div id="matrix" class="matrix" role="grid" aria-label="Runs by incident"></div></div>
+    <p id="totals" class="mono fine"></p>
+  </section>
+
+  <section id="trace" class="trace" aria-live="polite"></section>
+
+  <div id="tip" class="tip mono" role="tooltip" hidden></div>
+  </div>
+</Base>
+
+<script>
+  const base = '/traces/data-incident-responder/';
+  const runs = ['multi-1', 'multi-2', 'multi-3', 'single-1', 'single-2', 'single-3'];
+  const kinds = { schema_drift: 'renamed or retyped', null_spike: 'values missing', duplicates: 'duplicate rows', late_data: 'late data' };
+  const agents = { multi: ['triage', 'investigate', 'fix', 'review'], single: ['solve'] };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const label = (run) => `${run.startsWith('multi') ? 'Multi-agent' : 'Single agent'} · run ${run.slice(-1)}`;
+  const state = (r) => (!r.resolved ? 'bad' : r.root ? 'ok' : 'part');
+  const stateText = { ok: 'resolved, root found', part: 'resolved, root missed', bad: 'not resolved' };
+
+  let index = [];
+  const cache = new Map();
+
+  async function load(session) {
+    if (!cache.has(session)) cache.set(session, fetch(`${base}${session}.json`).then((r) => r.json()));
+    return cache.get(session);
+  }
+
+  function drawMatrix() {
+    const incidents = [...new Map(index.map((r) => [r.incident, r])).values()]
+      .sort((a, b) => Object.keys(kinds).indexOf(a.kind) - Object.keys(kinds).indexOf(b.kind) || a.incident.localeCompare(b.incident));
+    const at = new Map(index.map((r) => [r.session, r]));
+    const m = $('matrix');
+    m.style.setProperty('--cols', incidents.length);
+
+    let html = '<div class="corner"></div>';
+    let prev = null;
+    for (const inc of incidents) {
+      const first = inc.kind !== prev;
+      prev = inc.kind;
+      html += `<div class="kind${first ? ' start' : ''}">${first ? esc(kinds[inc.kind]) : ''}</div>`;
+    }
+    for (const run of runs) {
+      html += `<div class="rowlabel mono${run === 'single-1' ? ' gap' : ''}">${run.replace('-', ' ')}</div>`;
+      for (const inc of incidents) {
+        const r = at.get(`${run}-${inc.incident}`);
+        const s = r ? state(r) : 'none';
+        html += `<button class="cell ${s}${run === 'single-1' ? ' gap' : ''}" data-s="${run}-${inc.incident}" aria-label="${esc(`${inc.incident} ${label(run)}: ${stateText[s] ?? 'missing'}`)}"></button>`;
+      }
+    }
+    html += '<div class="rowlabel"></div>';
+    for (const inc of incidents) html += `<div class="heldrow">${inc.split === 'holdout' ? '<span class="held"></span>' : ''}</div>`;
+    m.innerHTML = html;
+
+    const tip = $('tip');
+    m.addEventListener('pointerover', (e) => {
+      const b = e.target.closest('button.cell');
+      if (!b) return;
+      const r = at.get(b.dataset.s);
+      tip.innerHTML = `<b>${esc(r.incident)}</b> ${esc(kinds[r.kind])}${r.split === 'holdout' ? ' · held out' : ''}<br>${esc(label(r.run))}<br>expected ${esc(r.expected)}, did ${esc(r.action)}<br>${esc(stateText[state(r)])} · ${Math.round(r.seconds)} s`;
+      const box = b.getBoundingClientRect();
+      tip.hidden = false;
+      const w = tip.offsetWidth;
+      tip.style.left = `${Math.min(window.innerWidth - w - 8, Math.max(8, box.left + box.width / 2 - w / 2))}px`;
+      tip.style.top = `${box.top + window.scrollY - tip.offsetHeight - 8}px`;
+    });
+    m.addEventListener('pointerout', (e) => { if (e.target.closest('button.cell')) tip.hidden = true; });
+    m.addEventListener('click', (e) => {
+      const b = e.target.closest('button.cell');
+      if (b) location.hash = b.dataset.s;
+    });
+
+    const per = (prefix) => index.filter((r) => r.run.startsWith(prefix));
+    const pct = (rs, f) => `${Math.round((100 * rs.filter(f).length) / rs.length)}%`;
+    $('totals').textContent = `Multi-agent: ${pct(per('multi'), (r) => r.resolved)} resolved, ${pct(per('multi'), (r) => r.root)} root found. Single agent: ${pct(per('single'), (r) => r.resolved)} resolved, ${pct(per('single'), (r) => r.root)} root found.`;
+  }
+
+  function diff(a, b) {
+    // line diff by longest common subsequence; model files are a few dozen lines
+    const x = a.split('\n'), y = b.split('\n');
+    const L = Array.from({ length: x.length + 1 }, () => new Array(y.length + 1).fill(0));
+    for (let i = x.length - 1; i >= 0; i--)
+      for (let j = y.length - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    const out = [];
+    let i = 0, j = 0;
+    while (i < x.length || j < y.length) {
+      if (i < x.length && j < y.length && x[i] === y[j]) { out.push([' ', x[i]]); i++; j++; }
+      else if (j < y.length && (i === x.length || L[i][j + 1] >= L[i + 1][j])) out.push(['+', y[j++]]);
+      else out.push(['-', x[i++]]);
+    }
+    return out.map(([s, l]) => `<span class="d${s === '+' ? 'add' : s === '-' ? 'del' : ''}">${s} ${esc(l)}</span>`).join('\n');
+  }
+
+  function timeline(t) {
+    const lanes = agents[t.run.split('-')[0]];
+    const total = Math.max(t.seconds, ...t.events.map((e) => e.at + e.seconds));
+    const W = 800, left = 92, lane = 30, top = 8, H = top + lanes.length * lane + 26;
+    const x = (s) => left + ((W - left - 8) * s) / total;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Timeline of agent steps over ${Math.round(total)} seconds">`;
+    const step = total > 240 ? 60 : total > 90 ? 30 : 10;
+    for (let s = 0; s <= total; s += step)
+      svg += `<line class="gridline" x1="${x(s)}" x2="${x(s)}" y1="${top}" y2="${H - 22}"/><text class="axis" x="${x(s)}" y="${H - 6}" text-anchor="middle">${s}s</text>`;
+    lanes.forEach((name, k) => {
+      const y = top + k * lane;
+      svg += `<text class="lane" x="${left - 10}" y="${y + lane / 2 + 4}" text-anchor="end">${name}</text>`;
+      for (const e of t.events.filter((e) => e.agent === name)) {
+        if (e.kind === 'agent') {
+          svg += `<rect class="span" x="${x(e.at)}" y="${y + 3}" width="${Math.max(1, x(e.at + e.seconds) - x(e.at))}" height="${lane - 6}" rx="3"/>`;
+          continue;
+        }
+        const n = t.events.indexOf(e);
+        const what = e.kind === 'model' ? `model call, ${e.seconds}s, ${e.tokens.in + e.tokens.out} tokens` : `${e.name}, ${e.seconds}s`;
+        svg += `<a href="#step-${n}" class="bar-link"><rect class="bar ${e.kind}" x="${x(e.at)}" y="${y + 8}" width="${Math.max(2, x(e.at + e.seconds) - x(e.at) - 1)}" height="${lane - 16}" rx="2"><title>${esc(what)}</title></rect></a>`;
+      }
+    });
+    return svg + '</svg>';
+  }
+
+  function argsBlock(name, args) {
+    if (args && typeof args === 'object' && typeof args.query === 'string') return `<pre class="sql">${esc(args.query)}</pre>`;
+    if (args && typeof args === 'object' && typeof args.sql === 'string') {
+      const rest = { ...args };
+      delete rest.sql;
+      return `<pre>${esc(JSON.stringify(rest, null, 1))}</pre><pre class="sql">${esc(args.sql)}</pre>`;
+    }
+    const s = JSON.stringify(args);
+    return s && s !== '{}' ? `<pre>${esc(JSON.stringify(args, null, 1))}</pre>` : '';
+  }
+
+  function pretty(result) {
+    try { return JSON.stringify(JSON.parse(result), null, 1); } catch { return result; }
+  }
+
+  function steps(t) {
+    let html = '';
+    t.events.forEach((e, n) => {
+      if (e.kind === 'agent') {
+        html += `<li class="agent-head mono">${esc(e.agent)} <span>${e.at.toFixed(1)}s · ${e.seconds.toFixed(1)}s</span></li>`;
+        return;
+      }
+      const when = `<span class="when">${e.at.toFixed(1)}s</span>`;
+      if (e.kind === 'model') {
+        const calls = (e.calls ?? []).map((c) => `<div class="call"><span class="fn">${esc(c.name)}</span>${argsBlock(c.name, c.args)}</div>`).join('');
+        const text = e.text ? `<p class="said">${esc(e.text)}</p>` : '';
+        html += `<li id="step-${n}" class="step model">${when}<div><p class="mono what">model · ${e.seconds}s · ${e.tokens.in} in, ${e.tokens.out + e.tokens.reasoning} out</p>${text}${calls}</div></li>`;
+      } else {
+        html += `<li id="step-${n}" class="step tool">${when}<div><p class="mono what">${esc(e.name)} returned · ${e.seconds}s</p><details><summary class="mono">result</summary><pre>${esc(pretty(e.result))}</pre></details></div></li>`;
+      }
+    });
+    return `<ol class="steps">${html}</ol>`;
+  }
+
+  async function show(session) {
+    const t = await load(session);
+    const s = state({ resolved: t.score.resolved, root: t.score.root_node_correct });
+    const others = runs.map((run) => `<a href="#${run}-${t.incident}" class="${run === t.run ? 'on' : ''}">${label(run).replace(' · run ', ' ')}</a>`).join('');
+    const patch = t.patch && t.patch.original != null
+      ? `<h3 class="mono label">Proposed change to ${esc(t.patch.file)}</h3><pre class="diff">${diff(t.patch.original, t.patch.sql)}</pre>`
+      : '';
+    const check = t.fix_check ? `, hidden check ${t.fix_check.ok ? 'passed' : 'failed'}` : '';
+    $('trace').innerHTML = `
+      <div class="switch mono" aria-label="Same incident, other runs">${others}</div>
+      <h2 class="title">${esc(t.incident)} <span>${esc(kinds[t.kind])}${t.split === 'holdout' ? ', held out' : ''}</span></h2>
+      <dl class="facts">
+        <dt class="mono">Expected</dt><dd>${esc(t.expected.action)} · started at <code>${esc(t.expected.root_node)}</code></dd>
+        <dt class="mono">Got</dt><dd>${esc(t.outcome.action)} · started at <code>${esc(t.outcome.root_node)}</code>${esc(check)}</dd>
+        <dt class="mono">Result</dt><dd><span class="cell ${s}" aria-hidden="true"></span> ${esc(stateText[s])} · ${Math.round(t.seconds)} s</dd>
+      </dl>
+      <div class="timeline">${timeline(t)}</div>
+      <p class="mono fine key"><span class="sw model"></span> model call <span class="sw tool"></span> tool call <span class="sw span"></span> agent active</p>
+      ${patch}
+      <h3 class="mono label">Steps</h3>
+      ${steps(t)}`;
+    document.querySelectorAll('#matrix .cell').forEach((c) => c.classList.toggle('sel', c.dataset.s === session));
+  }
+
+  async function route() {
+    const session = decodeURIComponent(location.hash.slice(1));
+    if (session.startsWith('step-')) return;
+    const pick = index.find((r) => r.session === session) ? session : 'multi-1-inc034';
+    await show(pick);
+    if (session === pick) $('trace').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  fetch(`${base}index.json`).then((r) => r.json()).then((rows) => {
+    index = rows;
+    drawMatrix();
+    route();
+    window.addEventListener('hashchange', route);
+  });
+</script>
+
+<style is:global>
+  .tp .back { display: inline-block; margin: 32px 0 24px; color: var(--ink-faint); text-decoration: none; }
+  .tp .back:hover { color: var(--accent); }
+  .tp h1 { font-family: var(--display); font-weight: 600; font-size: clamp(30px, 4.8vw, 44px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 14px; }
+  .tp .lede { font-size: 19px; color: var(--ink-soft); margin: 0 0 8px; max-width: 70ch; }
+  .tp .fine { font-size: 12px; color: var(--ink-faint); }
+  .tp .label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); margin: 28px 0 10px; }
+
+  :root { --ok: var(--shipped); --part: var(--running); --bad: #c2312a; }
+ @media (prefers-color-scheme: dark) { :root { --bad: #f0645a; } }
+
+  .tp .grid-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 20px; margin-top: 36px; }
+  .tp .grid-head .label { margin: 0; }
+  .tp .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; margin: 0; font-size: 11px; color: var(--ink-soft); }
+  .tp .legend li { display: flex; align-items: center; gap: 6px; }
+
+  .tp .matrix-wrap { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+  .tp .matrix { display: grid; grid-template-columns: 62px repeat(var(--cols), 10px); gap: 2px; align-items: center; width: max-content; }
+  .tp .kind { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); white-space: nowrap; overflow: visible; height: 16px; }
+  .tp .kind.start { border-left: 1px solid var(--rule); padding-left: 3px; }
+  .tp .rowlabel { font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+  .tp .rowlabel.gap, .tp .cell.gap { margin-top: 8px; }
+  .tp .heldrow { height: 8px; display: flex; justify-content: center; }
+
+  .tp .cell { width: 10px; height: 10px; border-radius: 3px; padding: 0; border: 0; display: inline-block; cursor: pointer; }
+  .tp .cell.ok { background: var(--ok); }
+  .tp .cell.part { background: transparent; box-shadow: inset 0 0 0 2px var(--part); }
+  .tp .cell.bad { background: var(--bad); clip-path: polygon(20% 0, 50% 30%, 80% 0, 100% 20%, 70% 50%, 100% 80%, 80% 100%, 50% 70%, 20% 100%, 0 80%, 30% 50%, 0 20%); border-radius: 0; }
+  .tp .cell.none { background: var(--rule); }
+  .tp .cell.sel { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .tp .legend .cell, .tp .facts .cell { cursor: default; }
+  .tp .held { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-faint); display: inline-block; }
+  .tp button.cell:hover { transform: scale(1.35); }
+
+  .tp .tip { position: absolute; z-index: 20; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 9px; font-size: 11px; line-height: 1.5; color: var(--ink-soft); pointer-events: none; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15); }
+  .tp .tip b { color: var(--ink); font-weight: 500; }
+
+  .tp .trace { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--rule); scroll-margin-top: 72px; }
+  .tp .switch { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+  .tp .switch a { text-decoration: none; color: var(--ink-soft); border: 1px solid var(--rule); border-radius: 999px; padding: 2px 10px; }
+  .tp .switch a.on { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+  .tp .title { font-family: var(--display); font-weight: 600; font-size: 30px; margin: 18px 0 8px; }
+  .tp .title span { font-family: var(--serif); font-weight: 400; font-size: 18px; color: var(--ink-faint); }
+  .tp .facts { display: grid; grid-template-columns: 90px 1fr; gap: 4px 12px; margin: 0 0 20px; font-size: 16px; }
+  .tp .facts dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); padding-top: 4px; }
+  .tp .facts dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .tp code { font-family: var(--mono); font-size: 0.8em; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
+
+  .tp .timeline svg { width: 100%; height: auto; display: block; font-family: var(--mono); }
+  .tp .timeline .gridline { stroke: var(--rule); stroke-width: 1; }
+  .tp .timeline .axis { fill: var(--ink-faint); font-size: 10px; }
+  .tp .timeline .lane { fill: var(--ink-soft); font-size: 11px; }
+  .tp .timeline .span { fill: var(--highlight); opacity: 0.6; }
+  .tp .timeline .bar.model { fill: var(--accent); }
+  .tp .timeline .bar.tool { fill: var(--ink-soft); }
+  .tp .timeline .bar-link:hover .bar { opacity: 0.7; }
+  .tp .key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tp .sw { width: 12px; height: 8px; border-radius: 2px; display: inline-block; margin-left: 8px; }
+  .tp .sw.model { background: var(--accent); margin-left: 0; }
+  .tp .sw.tool { background: var(--ink-soft); }
+  .tp .sw.span { background: var(--highlight); }
+
+  .tp pre { font-family: var(--mono); font-size: 12px; line-height: 1.5; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 6px 0; max-height: 360px; overflow-y: auto; }
+  .tp .diff .dadd { color: var(--shipped); }
+  .tp .diff .ddel { color: var(--bad); }
+
+  .tp .steps { list-style: none; padding: 0; margin: 0; }
+  .tp .steps .agent-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin: 22px 0 6px; padding-bottom: 4px; border-bottom: 1px dashed var(--rule); }
+  .tp .steps .agent-head span { color: var(--ink-faint); text-transform: none; letter-spacing: 0; margin-left: 8px; }
+  .tp .steps .step { display: grid; grid-template-columns: 56px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--rule) 50%, transparent); scroll-margin-top: 80px; }
+  .tp .steps .step:target { background: var(--highlight); }
+  .tp .steps .when { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); padding-top: 3px; }
+  .tp .steps .what { font-size: 11px; color: var(--ink-faint); margin: 0 0 4px; }
+  .tp .steps .fn { font-family: var(--mono); font-size: 13px; color: var(--ink); font-weight: 500; }
+  .tp .steps .said { font-size: 15px; color: var(--ink-soft); margin: 0 0 4px; }
+  .tp .steps summary { font-size: 11px; color: var(--ink-faint); cursor: pointer; }
+
+ @media (max-width: 560px) {
+    .tp .facts { grid-template-columns: 1fr; }
+    .tp .steps .step { grid-template-columns: 1fr; gap: 2px; }
+  }
+</style>
